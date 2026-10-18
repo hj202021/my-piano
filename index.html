@@ -15,13 +15,14 @@
             height: 100vh;
             margin: 0;
             overflow: hidden;
+            position: relative;
         }
         h1 { margin-bottom: 5px; color: #ffc0cb; }
         p { color: #aaa; margin-bottom: 20px; font-size: 14px; }
         
         /* 피아노 건반 전체를 감싸는 가로 스크롤 박스 */
         .piano-container {
-            width: 90vw;
+            width: 85vw;
             height: 300px;
             background: #111;
             border: 4px solid #333;
@@ -31,6 +32,7 @@
             align-items: flex-start;
             padding: 10px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            position: relative;
         }
         .piano {
             display: flex;
@@ -39,7 +41,7 @@
         }
         /* 하얀 건반 스타일 */
         .key.white {
-            width: 32px;
+            width: 36px;
             height: 260px;
             background: white;
             border: 1px solid #ccc;
@@ -62,7 +64,7 @@
         }
         /* 검은 건반 스타일 */
         .key.black {
-            width: 20px;
+            width: 22px;
             height: 160px;
             background: #222;
             border-radius: 0 0 4px 4px;
@@ -72,8 +74,8 @@
             align-items: flex-end;
             justify-content: center;
             padding-bottom: 10px;
-            color: white;
-            font-size: 8px;
+            color: #ffc0cb;
+            font-size: 9px;
             cursor: pointer;
             user-select: none;
             transition: background 0.05s;
@@ -81,15 +83,105 @@
         .key.black.active {
             background: #ff69b4;
         }
+
+        /* 우측 상단 설정 토글 버튼 */
+        .settings-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: #ffc0cb;
+            color: #1a1a1a;
+            border: none;
+            padding: 10px 18px;
+            font-size: 15px;
+            font-weight: bold;
+            border-radius: 20px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            z-index: 100;
+        }
+        .settings-btn:hover { background: #ffb6c1; }
+
+        /* 오른쪽에서 열리는 설정 사이드바 패널 */
+        .sidebar {
+            position: absolute;
+            top: 0;
+            right: -360px;
+            width: 320px;
+            height: 100vh;
+            background: #252525;
+            box-shadow: -5px 0 20px rgba(0,0,0,0.5);
+            transition: right 0.3s ease;
+            z-index: 90;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .sidebar.open {
+            right: 0;
+        }
+        .sidebar h2 {
+            color: #ffc0cb;
+            margin-top: 50px;
+            font-size: 18px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+        }
+        
+        /* A0 ~ C8 스크롤 목록 박스 */
+        .mapping-list {
+            flex: 1;
+            overflow-y: auto;
+            margin-top: 10px;
+            padding-right: 5px;
+        }
+        .mapping-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 5px;
+            border-bottom: 1px solid #333;
+        }
+        .mapping-item label {
+            font-size: 13px;
+            color: #ddd;
+            font-weight: bold;
+        }
+        .key-input {
+            width: 80px;
+            background: #111;
+            border: 1px solid #555;
+            color: #ffc0cb;
+            text-align: center;
+            padding: 5px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .key-input:focus {
+            border-color: #ffc0cb;
+            outline: none;
+            background: #333;
+        }
     </style>
 </head>
 <body>
 
-    <h1>🎹 Master 88-Key Web Piano</h1>
-    <p>마우스로 건반을 누르거나, 아래 기본 지정된 키(A~L 등)를 눌러 연주해보세요!</p>
+    <button class="settings-btn" id="toggleSidebar">⚙️ 키 설정하기</button>
+
+    <h1>🎹 Master 88-Key Custom Piano</h1>
+    <p>우측 상단 <b>[⚙️ 키 설정하기]</b>를 눌러 원하는 건반에 키보드 자판을 매핑해보세요!</p>
 
     <div class="piano-container">
         <div class="piano" id="piano"></div>
+    </div>
+
+    <!-- 우측 설정 사이드바 -->
+    <div class="sidebar" id="sidebar">
+        <h2>🎹 A0 ~ C8 키 매핑 설정</h2>
+        <div class="mapping-list" id="mappingList"></div>
     </div>
 
     <script>
@@ -109,48 +201,46 @@
         }
 
         const piano = document.getElementById('piano');
+        const mappingList = document.getElementById('mappingList');
         const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
         
-        // 컴퓨터 키보드 자판 매핑 샘플 (기본 홈 피치 영역)
-        const keyMap = {
-            'a': 40, 'w': 41, 's': 42, 'e': 43, 'd': 44, 'f': 45, 't': 46, 'g': 47, 'y': 48, 'h': 49, 'u': 50, 'j': 51, 'k': 52
-        };
+        // 동적 키 매핑 저장 객체 (midiNote -> assignedKeyName)
         const midiToKey = {};
-        for (let k in keyMap) { midiToKey[keyMap[k]] = k; }
+        const keyToMidi = {};
+
+        // 기본 몇 개 샘플 지정 (필요하면 사용자가 자유롭게 수정 가능)
+        const defaultMappings = { 40: 'a', 42: 's', 44: 'd', 45: 'f', 47: 'g', 49: 'h', 51: 'j', 52: 'k' };
+        for (let m in defaultMappings) {
+            midiToKey[m] = defaultMappings[m];
+            keyToMidi[defaultMappings[m]] = m;
+        }
 
         let whiteKeyLeft = 0;
         const keyElements = {};
+        const inputElements = {};
 
-        // 88키 생성 (MIDI 번호 21(A0)부터 108(C8)까지)
+        // 88키 데이터 및 UI 생성 (MIDI 번호 21(A0)부터 108(C8)까지)
         for (let midi = 21; midi <= 108; midi++) {
             const noteIndex = (midi - 12) % 12;
             const noteName = noteNames[noteIndex];
             const octave = Math.floor((midi - 12) / 12);
             const fullName = `${noteName}${octave}`;
-            
-            // 주파수 공식 계산
             const freq = 440 * Math.pow(2, (midi - 69) / 12);
             const isBlack = noteName.includes('#');
 
+            // 1. 건반 생성
             const keyEl = document.createElement('div');
             keyEl.classList.add('key');
             
-            // 키보드 단축키가 매핑되어 있다면 표시
-            let label = midiToKey[midi] ? `[${midiToKey[midi].toUpperCase()}]` : '';
-
             if (!isBlack) {
                 keyEl.classList.add('white');
                 keyEl.style.left = whiteKeyLeft + 'px';
-                keyEl.innerHTML = `${fullName}<br>${label}`;
-                whiteKeyLeft += 32; // 하얀 건반 너비 만큼 이동
+                whiteKeyLeft += 36;
             } else {
                 keyEl.classList.add('black');
-                // 검은 건반 위치 조정
-                keyEl.style.left = (whiteKeyLeft - 10) + 'px';
-                keyEl.innerHTML = label;
+                keyEl.style.left = (whiteKeyLeft - 11) + 'px';
             }
 
-            // 마우스 클릭 이벤트
             keyEl.addEventListener('mousedown', () => {
                 playSound(freq);
                 keyEl.classList.add('active');
@@ -160,21 +250,91 @@
 
             keyElements[midi] = keyEl;
             piano.appendChild(keyEl);
+
+            // 2. 설정 창 항목 생성 (A0 ~ C8)
+            const item = document.createElement('div');
+            item.classList.add('mapping-item');
+
+            const label = document.createElement('label');
+            label.innerText = fullName;
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.classList.add('key-input');
+            input.placeholder = '키 입력...';
+            input.value = midiToKey[midi] ? midiToKey[midi].toUpperCase() : '';
+            input.readOnly = true; // 키를 직접 누르면 감지되도록 설정
+
+            // 입력창을 클릭하고 키보드 자판을 누르면 매핑 설정!
+            input.addEventListener('keydown', (e) => {
+                e.preventDefault();
+                const keyName = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+                
+                // 기존에 이 키를 쓰던 건반이 있다면 해제
+                if (keyToMidi[keyName]) {
+                    const oldMidi = keyToMidi[keyName];
+                    delete midiToKey[oldMidi];
+                    if (inputElements[oldMidi]) inputElements[oldMidi].value = '';
+                    updateKeyLabel(oldMidi);
+                }
+
+                // 새로운 매핑 등록
+                midiToKey[midi] = keyName;
+                keyToMidi[keyName] = midi;
+                input.value = keyName.toUpperCase();
+                updateKeyLabel(midi);
+            });
+
+            item.appendChild(label);
+            item.appendChild(input);
+            mappingList.appendChild(item);
+
+            inputElements[midi] = input;
+            updateKeyLabel(midi, fullName);
         }
 
-        // 컴퓨터 키보드 입력 이벤트
+        // 건반 위의 키 라벨 업데이트 함수
+        function updateKeyLabel(midi, fullNameOverride) {
+            const el = keyElements[midi];
+            const noteIndex = (midi - 12) % 12;
+            const fullName = fullNameOverride || `${noteNames[noteIndex]}${Math.floor((midi - 12) / 12)}`;
+            const assigned = midiToKey[midi] ? `[${midiToKey[midi].toUpperCase()}]` : '';
+
+            if (el.classList.contains('white')) {
+                el.innerHTML = `${fullName}<br><span>${assigned}</span>`;
+            } else {
+                el.innerHTML = `<span>${assigned}</span>`;
+            }
+        }
+
+        // 사이드바 토글 버튼 이벤트
+        const toggleBtn = document.getElementById('toggleSidebar');
+        const sidebar = document.getElementById('sidebar');
+        toggleBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('open');
+        });
+
+        // 실제 키보드로 피아노 연주
         window.addEventListener('keydown', (e) => {
-            const m = keyMap[e.key.toLowerCase()];
-            if (m && keyElements[m]) {
-                const freq = 440 * Math.pow(2, (m - 69) / 12);
+            // 설정 창 입력 중에는 연주 작동 방지
+            if (document.activeElement.classList.contains('key-input')) return;
+
+            const keyName = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+            const midi = keyToMidi[keyName];
+            if (midi && keyElements[midi]) {
+                const freq = 440 * Math.pow(2, (midi - 69) / 12);
                 playSound(freq);
-                keyElements[m].classList.add('active');
+                keyElements[midi].classList.add('active');
             }
         });
+
         window.addEventListener('keyup', (e) => {
-            const m = keyMap[e.key.toLowerCase()];
-            if (m && keyElements[m]) {
-                keyElements[m].classList.remove('active');
+            if (document.activeElement.classList.contains('key-input')) return;
+
+            const keyName = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+            const midi = keyToMidi[keyName];
+            if (midi && keyElements[midi]) {
+                keyElements[midi].classList.remove('active');
             }
         });
     </script>
