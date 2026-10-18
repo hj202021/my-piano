@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>나만의 키보드 피아노</title>
+    <style>
+        body {
+            background-color: #ffc0cb; /* 약속의 핑크빛 배경! */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: sans-serif;
+        }
+        h1 { color: #ffffff; margin-bottom: 20px; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); }
+        .piano {
+            display: flex;
+            gap: 10px;
+        }
+        .key {
+            width: 65px;
+            height: 220px;
+            background: white;
+            border: 2px solid #333;
+            border-radius: 0 0 8px 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            padding-bottom: 20px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            user-select: none;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: all 0.05s;
+        }
+        /* 건반을 누르거나 키보드를 칠 때 색이 변하는 효과 */
+        .key.active {
+            background: #ffb6c1; 
+            transform: translateY(4px);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🎹 내 손으로 만드는 키보드 피아노</h1>
+    <div class="piano">
+        <div class="key" data-note="261.63" data-key="a">A<br><span>(도)</span></div>
+        <div class="key" data-note="293.66" data-key="s">S<br><span>(레)</span></div>
+        <div class="key" data-note="329.63" data-key="d">D<br><span>(미)</span></div>
+        <div class="key" data-note="349.23" data-key="f">F<br><span>(파)</span></div>
+        <div class="key" data-note="392.00" data-key="g">G<br><span>(솔)</span></div>
+    </div>
+
+    <script>
+        // 컴퓨터 브라우저 자체 기능으로 피아노 소리(주파수) 만들기
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(frequency) {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc.type = 'sine'; // 부드러운 소리
+            osc.frequency.value = frequency;
+            
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            osc.start();
+            gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.8);
+            setTimeout(() => osc.stop(), 500);
+        }
+
+        // 키보드 자판을 누를 때
+        window.addEventListener('keydown', (e) => {
+            const keyElement = document.querySelector(`.key[data-key="${e.key.toLowerCase()}"]`);
+            if (keyElement) {
+                const freq = parseFloat(keyElement.dataset.note);
+                playSound(freq);
+                keyElement.classList.add('active');
+            }
+        });
+
+        // 키보드 자판에서 손을 뗄 때
+        window.addEventListener('keyup', (e) => {
+            const keyElement = document.querySelector(`.key[data-key="${e.key.toLowerCase()}"]`);
+            if (keyElement) {
+                keyElement.classList.remove('active');
+            }
+        });
+
+        // 마우스로 화면의 건반을 직접 눌러도 소리가 나게!
+        document.querySelectorAll('.key').forEach(key => {
+            key.addEventListener('click', () => {
+                const freq = parseFloat(key.dataset.note);
+                playSound(freq);
+                key.classList.add('active');
+                setTimeout(() => key.classList.remove('active'), 150);
+            });
+        });
+    </script>
+</body>
+</html>
