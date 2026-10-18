@@ -164,7 +164,7 @@
     <button class="settings-btn" id="toggleSidebar">⚙️ 설정하기</button>
 
     <h1>🎹 Master 88-Key Custom Piano</h1>
-    <p>설정창에서 키를 매핑하고, 비브라토 효과와 피아노 사운드를 즐겨보세요!</p>
+    <p>저음이 웅장하고 풍성하게 울리도록 업그레이드된 피아노를 즐겨보세요!</p>
 
     <div class="piano-container">
         <div class="piano" id="piano"></div>
@@ -185,52 +185,74 @@
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const vibratoToggle = document.getElementById('vibratoToggle');
 
-        // 실제 피아노 타건감 및 배음(Harmonics) 구조를 구현한 사운드 엔진
-        function playPianoSound(freq) {
+        // 진짜 그랜드 피아노 사운드 시뮬레이터 (저음역대 보강 및 필터 적용)
+        function playPianoSound(freq, midi) {
             if (audioCtx.state === 'suspended') { audioCtx.resume(); }
 
             const now = audioCtx.currentTime;
-            const masterGain = audioCtx.createGain();
             
-            // 피아노 특유의 타건 감쇠 (Decay) 적용
-            masterGain.gain.setValueAtTime(0.4, now);
-            masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
-            masterGain.connect(audioCtx.destination);
+            // 1. 저음역대(C3 이하, MIDI 48 미만)로 갈수록 볼륨을 대폭 키워줍니다! (인간의 귀 보정 + 저음 파워)
+            const lowBoost = midi < 48 ? (48 - midi) * 0.05 + 1.8 : 1.0;
+            const baseVolume = 0.45 * lowBoost;
 
-            // 배음 구조를 만들기 위해 주파수 비율이 다른 오실레이터 3개를 겹침 (진짜 피아노 현 진동 시뮬레이션)
-            const ratios = [1, 2, 3]; 
-            const volumes = [0.4, 0.2, 0.1];
+            // 2. 저음은 웅장하게 오래 울리고(잔향 김), 고음은 깔끔하게 끝나도록 설정
+            const decayTime = 1.6 + (108 - midi) * 0.015;
 
+            const masterGain = audioCtx.createGain();
+            masterGain.gain.setValueAtTime(baseVolume, now);
+            masterGain.gain.exponentialRampToValueAtTime(0.0001, now + decayTime);
+
+            // 3. 로우패스 필터로 기계적인 차가운 쇳소리를 따뜻하고 부드러운 피아노 울림으로 변환
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(Math.min(freq * 5, 3500), now);
+
+            masterGain.connect(filter);
+            filter.connect(audioCtx.destination);
+
+            // 4. 풍성한 그랜드 피아노 배음 구조 (Sawtooth + Triangle + Sub-Bass Sine)
+            const osc1 = audioCtx.createOscillator(); // 타격감과 밝은 색채
+            const osc2 = audioCtx.createOscillator(); // 미세 디튠 코러스감
+            const osc3 = audioCtx.createOscillator(); // 저음역대 웅장한 서브 베이스
+
+            osc1.type = 'sawtooth';
+            osc2.type = 'triangle';
+            osc3.type = 'sine';
+
+            osc1.frequency.setValueAtTime(freq, now);
+            osc2.frequency.setValueAtTime(freq * 1.003, now);
+            osc3.frequency.setValueAtTime(freq * 0.5, now); // 1옥타브 아래 저음 보강
+
+            const g1 = audioCtx.createGain();
+            const g2 = audioCtx.createGain();
+            const g3 = audioCtx.createGain();
+
+            g1.gain.value = 0.4;
+            g2.gain.value = 0.4;
+            // 저음 건반일수록 서브 베이스(g3)를 훨씬 빵빵하게 켜줍니다!
+            g3.gain.value = midi < 50 ? 0.8 : 0.15; 
+
+            osc1.connect(g1); g1.connect(masterGain);
+            osc2.connect(g2); g2.connect(masterGain);
+            osc3.connect(g3); g3.connect(masterGain);
+
+            // 비브라토 효과
             let vibratoLFO = null;
             if (vibratoToggle.checked) {
                 vibratoLFO = audioCtx.createOscillator();
                 const vibratoGain = audioCtx.createGain();
                 vibratoLFO.frequency.value = 5;
-                vibratoGain.gain.value = 3;
+                vibratoGain.gain.value = 2.5;
                 vibratoLFO.connect(vibratoGain);
+                vibratoGain.connect(osc1.frequency);
+                vibratoGain.connect(osc2.frequency);
                 vibratoLFO.start(now);
-                vibratoLFO.stop(now + 1.5);
+                vibratoLFO.stop(now + decayTime);
             }
 
-            ratios.forEach((ratio, index) => {
-                const osc = audioCtx.createOscillator();
-                const oscGain = audioCtx.createGain();
-
-                osc.type = index === 0 ? 'triangle' : 'sine';
-                osc.frequency.setValueAtTime(freq * ratio, now);
-
-                oscGain.gain.value = volumes[index];
-                osc.connect(oscGain);
-                oscGain.connect(masterGain);
-
-                if (vibratoLFO) {
-                    // 비브라토 연결
-                    // (LFO는 각 오실레이터 주파수에 연결 가능)
-                }
-
-                osc.start(now);
-                osc.stop(now + 1.5);
-            });
+            osc1.start(now); osc1.stop(now + decayTime);
+            osc2.start(now); osc2.stop(now + decayTime);
+            osc3.start(now); osc3.stop(now + decayTime);
         }
 
         const piano = document.getElementById('piano');
@@ -272,7 +294,7 @@
             }
 
             keyEl.addEventListener('mousedown', () => {
-                playPianoSound(freq);
+                playPianoSound(freq, midi);
                 keyEl.classList.add('active');
             });
             keyEl.addEventListener('mouseup', () => keyEl.classList.remove('active'));
@@ -338,7 +360,6 @@
             sidebar.classList.toggle('open');
         });
 
-        // 꾹 누를 때 뜨드드득 반복되는 현상 완벽 차단 (e.repeat 방지)
         window.addEventListener('keydown', (e) => {
             if (document.activeElement.classList.contains('key-input')) return;
             if (e.repeat) return;
@@ -349,7 +370,7 @@
             if (midi && keyElements[midi] && !pressedKeys.has(midi)) {
                 pressedKeys.add(midi);
                 const freq = 440 * Math.pow(2, (midi - 69) / 12);
-                playPianoSound(freq);
+                playPianoSound(freq, midi);
                 keyElements[midi].classList.add('active');
             }
         });
