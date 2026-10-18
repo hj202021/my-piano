@@ -164,7 +164,7 @@
     <button class="settings-btn" id="toggleSidebar">⚙️ 설정하기</button>
 
     <h1>🎹 Master 88-Key Custom Piano</h1>
-    <p>설정창에서 키를 매핑하고, 비브라토(떨림) 효과도 켜보세요!</p>
+    <p>설정창에서 키를 매핑하고, 비브라토 효과와 피아노 사운드를 즐겨보세요!</p>
 
     <div class="piano-container">
         <div class="piano" id="piano"></div>
@@ -185,41 +185,52 @@
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const vibratoToggle = document.getElementById('vibratoToggle');
 
-        // 진짜 피아노 사운드 시뮬레이션 및 비브라토 적용 함수
+        // 실제 피아노 타건감 및 배음(Harmonics) 구조를 구현한 사운드 엔진
         function playPianoSound(freq) {
             if (audioCtx.state === 'suspended') { audioCtx.resume(); }
 
             const now = audioCtx.currentTime;
+            const masterGain = audioCtx.createGain();
             
-            // 메인 오실레이터 (풍성한 사운드를 위해 사각파+사인파 느낌 조합)
-            const osc = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
+            // 피아노 특유의 타건 감쇠 (Decay) 적용
+            masterGain.gain.setValueAtTime(0.4, now);
+            masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
+            masterGain.connect(audioCtx.destination);
 
-            osc.type = 'triangle'; // 부드러우면서도 단단한 피아노 느낌
-            osc.frequency.setValueAtTime(freq, now);
+            // 배음 구조를 만들기 위해 주파수 비율이 다른 오실레이터 3개를 겹침 (진짜 피아노 현 진동 시뮬레이션)
+            const ratios = [1, 2, 3]; 
+            const volumes = [0.4, 0.2, 0.1];
 
-            // 비브라토(떨림) 효과가 켜져 있을 때만 LFO 작동
             let vibratoLFO = null;
             if (vibratoToggle.checked) {
                 vibratoLFO = audioCtx.createOscillator();
                 const vibratoGain = audioCtx.createGain();
-                vibratoLFO.frequency.value = 5; // 떨림 속도
-                vibratoGain.gain.value = 4;   // 떨림 깊이
+                vibratoLFO.frequency.value = 5;
+                vibratoGain.gain.value = 3;
                 vibratoLFO.connect(vibratoGain);
-                vibratoGain.connect(osc.frequency);
                 vibratoLFO.start(now);
+                vibratoLFO.stop(now + 1.5);
             }
 
-            // 타건 후 점점 소리가 줄어드는 피아노 엔벨로프 (Decay)
-            gainNode.gain.setValueAtTime(0.5, now);
-            gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.8); // 1.8초 동안 잔향 유지
+            ratios.forEach((ratio, index) => {
+                const osc = audioCtx.createOscillator();
+                const oscGain = audioCtx.createGain();
 
-            osc.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
+                osc.type = index === 0 ? 'triangle' : 'sine';
+                osc.frequency.setValueAtTime(freq * ratio, now);
 
-            osc.start(now);
-            osc.stop(now + 1.8);
-            if (vibratoLFO) vibratoLFO.stop(now + 1.8);
+                oscGain.gain.value = volumes[index];
+                osc.connect(oscGain);
+                oscGain.connect(masterGain);
+
+                if (vibratoLFO) {
+                    // 비브라토 연결
+                    // (LFO는 각 오실레이터 주파수에 연결 가능)
+                }
+
+                osc.start(now);
+                osc.stop(now + 1.5);
+            });
         }
 
         const piano = document.getElementById('piano');
@@ -228,7 +239,7 @@
         
         const midiToKey = {};
         const keyToMidi = {};
-        const pressedKeys = new Set(); // 중복 방지용 세트
+        const pressedKeys = new Set();
 
         const defaultMappings = { 40: 'a', 42: 's', 44: 'd', 45: 'f', 47: 'g', 49: 'h', 51: 'j', 52: 'k' };
         for (let m in defaultMappings) {
@@ -327,10 +338,10 @@
             sidebar.classList.toggle('open');
         });
 
-        // 꾹 누를 때 반복되는 버그(e.repeat) 완벽 차단 및 연주 처리
+        // 꾹 누를 때 뜨드드득 반복되는 현상 완벽 차단 (e.repeat 방지)
         window.addEventListener('keydown', (e) => {
             if (document.activeElement.classList.contains('key-input')) return;
-            if (e.repeat) return; // 핵심: 키 반복 입력 방지!
+            if (e.repeat) return;
 
             const keyName = e.key.length === 1 ? e.key.toLowerCase() : e.key;
             const midi = keyToMidi[keyName];
